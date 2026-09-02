@@ -9,7 +9,9 @@ Act as a thin relay between the user and DeepSeek. From now on — until the use
 exits — do NOT compose your own answer. For every message the user sends:
 
 1. Forward the user's message verbatim as the prompt:
-   `powershell -NoProfile -File scripts/ask-deepseek.ps1 "<user's message>"`
+
+       python scripts/ask_deepseek.py "<user's message>"
+
 2. Print the script's output **verbatim** — no summary, no edits, no commentary.
 
 This keeps your own work to one command execution plus an echo, so Claude token

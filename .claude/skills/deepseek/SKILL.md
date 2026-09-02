@@ -24,14 +24,16 @@ first, then pass it as a single argument.
 
 Run the helper script with the content to send as one argument:
 
-    powershell -NoProfile -File scripts/ask-deepseek.ps1 "<content>"
+    python scripts/ask_deepseek.py "<content>"
 
 Then print the script's stdout **verbatim** — do not summarize, edit, or add
 commentary. The output is DeepSeek's answer.
 
 ## Notes
 
-- Needs `DEEPSEEK_API_KEY` set (a real env var, or in `.claude/settings.local.json`'s `env` block).
-- Default model is `deepseek-v4-pro`. Pass `deepseek-v4-flash` as a second argument to use the fast model.
-- If PowerShell blocks the script (execution policy), run once:
-  `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
+- Reads `DEEPSEEK_API_KEY` from the environment, falling back to the `env` block
+  of `.claude/settings.local.json` (git-ignored), so no shell setup is required.
+- Default model is `deepseek-v4-pro`. Pass `deepseek-v4-flash` as a second
+  argument for the cheaper/faster model.
+- `scripts/ask-deepseek.ps1` is an equivalent PowerShell version. Prefer the
+  Python script: it is portable and avoids PowerShell execution-policy blocks.
