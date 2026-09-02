@@ -26,15 +26,89 @@ combined how, actually produce an edge.
 
 ## Data
 
-- **Historical data**: a year of historical market data is being downloaded to
-  local disk by a separate agent/process running outside this environment. This
-  repo does not yet contain that data or know its exact path/format — treat the
-  data location as a config value (e.g. an env var or config file), not a
-  hardcoded path, so whichever machine actually runs the backtester can point at
-  wherever the data lands locally.
-- **Live/supplementary data**: TradingView and ATAS for order flow, liquidations,
-  and volume profile (POC) — these aren't standard OHLCV, so we'll need either a
-  manual export/import path or an API/webhook integration per source.
+### Historical training data (handoff from a separate local agent)
+
+A separate Claude Code agent, running locally (not in this remote sandbox), pulled
+and validated a year of Bybit historical market-state data using a purpose-built
+tool. This repo does not contain that data — it lives on the local machine that
+ran the pull — so the backtester's data path must be a config value (env var /
+config file), never hardcoded, so it can point wherever the data actually sits
+on whichever machine runs it.
+
+| Property | Value |
+|---|---|
+| Symbols | BTCUSDT, ETHUSDT, SOLUSDT (linear perps) |
+| Range | 2025-09-01 → 2026-08-31 (365 days each) |
+| Resolution | 5 seconds → 17,280 rows/day |
+| Partitions | 1,095 (365 × 3), 0 failed / 0 unavailable |
+| Format | Parquet, hive-partitioned, SHA-256 manifest + schema hash per partition |
+| Total size | ~2.5 GB |
+| Schema version | `market-state-v1` |
+
+**Location** (local machine, Windows path):
+```
+D:\Projects\TradingTrainingData\market-state\
+  symbol=BTCUSDT\year=2025\month=09\day=01\market_state_5s_2025-09-01.parquet
+  ... (same tree for ETHUSDT, SOLUSDT)
+```
+Hive partitions: `symbol={SYM}/year={YYYY}/month={MM}/day={DD}/`. Each day dir
+holds one `market_state_5s_{date}.parquet` plus a `manifest.json` (SHA-256,
+schema hash, builder version).
+
+**Schema (35 columns)**:
+- Timestamp/identity: `TimestampMs` (ms epoch UTC bucket start), `Symbol`, `IntervalSeconds`
+- Price/book: `BestBidPrice`, `BestAskPrice`, `MidPrice`, `MicroPrice`, `Spread`,
+  `SpreadBps`, `BidSizeLevel1`, `AskSizeLevel1`, `BidSizeTop5`, `AskSizeTop5`,
+  `BidSizeTop20`, `AskSizeTop20`, `BookImbalanceLevel1`, `BookImbalanceTop5`,
+  `BookImbalanceTop20`, `OrderBookUpdates`, `LastUpdateId`
+- Trades (aggregated per 5s bucket): `TradeCount`, `TradeVolume`, `BuyVolume`,
+  `SellVolume`, `TradeNotional`, `Vwap`, `TradeOpen`, `TradeHigh`, `TradeLow`,
+  `TradeClose`, `CvdDelta` (cumulative-volume-delta change)
+- Derived/external: `OpenInterest`, `HasOpenInterest`, `FundingRate`, `HasFundingRate`
+  (the `Has*` flags mark buckets where OI/funding were unavailable — those are
+  sampled less often than every 5s)
+
+**No liquidation data** — Bybit has no free historical liquidation archive, so
+none was fabricated or included. This directly affects the strategy: the
+liquidation/order-flow confluence rules (see Signals above) can't be backtested
+against this dataset as-is. Options: source liquidations from ATAS/another paid
+provider for backtesting, approximate liquidation pressure from `CvdDelta` +
+`OpenInterest` deltas + book imbalance, or drop liquidation confluence from the
+backtested rule set and treat it as a live-only overlay once Stage 2 has real
+ATAS/TradingView feeds.
+
+**How it was produced**: `TrainingDataBuilder` (https://github.com/jsboiss/TrainingDataBuilder,
+.NET 10, Parquet.Net 6.0.3), run per symbol, e.g.:
+```powershell
+dotnet run --project src/TrainingDataBuilder -- `
+  --symbol BTCUSDT --start 2025-09-01 --end 2026-08-31 `
+  --interval-seconds 5 --parallelism 4 `
+  --output "D:/Projects/TradingTrainingData"
+```
+Pipeline per day: download Bybit archives → reconstruct L2 order book → aggregate
+5s market-state rows → validate coverage → write one atomic Parquet partition +
+manifest → delete raw archives. Sources (public, no API key): order book from
+`quote-saver.bycsi.com`, trades from `public.bybit.com`, OI/funding from
+`api.bybit.com/v5/market/*`. Resume-safe (checksum-validated partitions are
+skipped); supports more symbols, different date windows, `--overwrite`,
+`--keep-raw`, and a `--dashboard` web UI. Output root is overridable via
+`--output` or `TRAINING_DATA_ROOT` env var — useful since the documented default
+(`B:\Dev\TradingTrainingData`) doesn't exist on the machine that ran this.
+
+**Next steps flagged by that agent** (not yet done):
+1. Load a partition and verify exact Parquet column names/types (pyarrow or
+   Parquet.Net) match this schema.
+2. Feature engineering + label derivation (future returns / direction / regime).
+3. Train/val/test split — must respect time order (data is chronological per
+   symbol); this lines up with the walk-forward validation approach below.
+
+### Live/supplementary data
+
+TradingView and ATAS for order flow, liquidations, and volume profile (POC) —
+these aren't standard OHLCV, so we'll need either a manual export/import path or
+an API/webhook integration per source. Liquidations in particular aren't in the
+historical dataset above, so this is also where liquidation confluence rules
+would first get real data, in Stage 2.
 
 ## Stages
 
@@ -92,9 +166,10 @@ should differ per stage.
 - **Language/stack** — not chosen yet. Python is the natural fit for this kind
   of work (pandas/numpy for data handling, mature backtesting libraries,
   broker/exchange SDKs for stage 3) but this hasn't been confirmed.
-- **Historical data format/location** — depends on what the other agent is
-  downloading (file format, path, symbols/timeframes covered). Needs to be
-  confirmed before stage 1 can actually load real data.
+- **Historical data format/location** — resolved, see Data section above
+  (Parquet, hive-partitioned, on a local Windows machine). Still open: no
+  liquidation data is included, so the liquidation-confluence rule needs a
+  fallback (proxy features, or live-only) until a real source is wired up.
 - **Broker/exchange for stage 3** — not chosen; depends on what market(s) the
   strategy targets (crypto, futures, forex, etc.), which affects what ATAS/order
   -flow data is even relevant.
