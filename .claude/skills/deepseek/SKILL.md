@@ -22,15 +22,20 @@ first, then pass it as a single argument.
 
 ## How
 
-Run the helper script with the content to send as one argument:
+Run the helper script (at the repo root, not under this skill directory) with
+the content to send as one argument:
 
     python scripts/ask_deepseek.py "<content>"
 
 Then print the script's stdout **verbatim** — do not summarize, edit, or add
-commentary. The output is DeepSeek's answer.
+commentary. The output is DeepSeek's answer, followed by a line reporting the
+prompt/completion/total token usage for that call.
 
 ## Notes
 
+- The helper scripts live at the repo root's `scripts/` directory
+  (`scripts/ask_deepseek.py`), not inside this skill folder — run the command
+  from the repo root, or with a path relative to it.
 - Reads `DEEPSEEK_API_KEY` from the environment, falling back to the `env` block
   of `.claude/settings.local.json` (git-ignored), so no shell setup is required.
 - Default model is `deepseek-v4-pro`. Pass `deepseek-v4-flash` as a second

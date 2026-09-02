@@ -43,3 +43,9 @@ catch {
 }
 
 $resp.choices[0].message.content
+
+if ($resp.usage) {
+    Write-Output ""
+    Write-Output "---"
+    Write-Output "DeepSeek tokens — prompt: $($resp.usage.prompt_tokens), completion: $($resp.usage.completion_tokens), total: $($resp.usage.total_tokens)"
+}
