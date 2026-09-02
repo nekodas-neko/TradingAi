@@ -74,6 +74,13 @@ def main():
 
     print(body["choices"][0]["message"]["content"])
 
+    usage = body.get("usage")
+    if usage:
+        print("\n---\nDeepSeek tokens — prompt: %s, completion: %s, total: %s"
+              % (usage.get("prompt_tokens", "?"),
+                 usage.get("completion_tokens", "?"),
+                 usage.get("total_tokens", "?")))
+
 
 if __name__ == "__main__":
     main()
